@@ -1,0 +1,4 @@
+.DS_Store
+modem-creds
+*.temp
+*.stackdump
