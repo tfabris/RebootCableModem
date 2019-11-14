@@ -16,6 +16,7 @@ WiFi flakiness.
 The commands which are used to reboot the modem are specific to the SMCD3GNV
 modem, but the techniques used in this script could potentially be adaptable
 to other models.
+
 ------------------------------------------------------------------------------
 
 
