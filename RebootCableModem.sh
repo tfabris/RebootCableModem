@@ -50,12 +50,11 @@ testMode=false
 modemIp="10.0.0.1"
 
 # Set number of loops, and the number of seconds, of the network test loop. By
-# default, this program does 4 network tests, with 60 seconds of sleep between
-# each test, meaning that the program runs for a hair over 4 minutes total
-# (there is no sleep after the 4th test). Configure this program so that it is
-# launched on a scheduled timer which runs every 5 minutes.
-NumberOfNetworkTests=4
-SleepBetweenTestsSec=60
+# default, this program runs for about 4.5 minutes total (there is no sleep
+# after the last test). Configure this program so that it is launched on a
+# scheduled timer which runs every 5 minutes.
+NumberOfNetworkTests=9
+SleepBetweenTestsSec=30
 
 # Alternate speed for running this program in test mode.
 if [ "$testMode" = true ]
@@ -64,7 +63,14 @@ then
 fi
 
 # The Internet site we will be pinging to determine if the network is up.
-TestSite="google.com"
+# 2020-01-19 - Trying to ping the google DNS server instead of a DNS name,
+# to work around the problem where my cable modem (DHCP/DNS server) will
+# often respond to pings when DNS does not resolve. It will insert its
+# own page into the web request, making it look (to a tester program) like
+# all is well when it really isn't. So changing the test site.
+# TestSite="google.com"
+TestSite="8.8.8.8"
+
 
 # Program name used in log messages.
 programname="Reboot Cable Modem"
@@ -192,6 +198,25 @@ do
     ((numberOfNetworkFailures++))
     LogMessage "err" "Network is down on test loop $networkTestLoop of $NumberOfNetworkTests. Number of failures so far: $numberOfNetworkFailures"
   fi
+
+  # Issue - on 2020-01-19 I encountered a situation where DNS was down and
+  # web sites were not responding, though PING worked and responded
+  # successfully to ping google.com. I think this was due to a combination of
+  # factors, partially due to DNS resolver cache on the DHCP router being
+  # still active, and the cable modem being in a state where it only partially
+  # functioned. So I'm trying this alternative to actually check if the web
+  # site is up using the "--spider" feature of WGet. This method was suggested
+  # here: https://stackoverflow.com/a/26820300
+  # UPDATE: This alternative test was not an accurate method, and it falsely
+  # indicated that the network was up when it was in fact very down. Do not use.
+  # wget -q --timeout=15 --spider $thisTestSite
+  # if [ $? -eq 0 ]
+  # then
+  #   LogMessage "info" "Network is up on test loop $networkTestLoop of $NumberOfNetworkTests. Number of failures so far: $numberOfNetworkFailures"
+  # else
+  #   ((numberOfNetworkFailures++))
+  #   LogMessage "err" "Network is down on test loop $networkTestLoop of $NumberOfNetworkTests. Number of failures so far: $numberOfNetworkFailures"
+  # fi
 
   # Sleep between each network test (but not on the last loop).
   if [ "$networkTestLoop" -lt $NumberOfNetworkTests ]
