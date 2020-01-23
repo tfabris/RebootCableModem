@@ -50,11 +50,11 @@ testMode=false
 modemIp="10.0.0.1"
 
 # Set number of loops, and the number of seconds, of the network test loop. By
-# default, this program runs for about 4.5 minutes total (there is no sleep
+# default, this program runs for about 4+ minutes total (there is no sleep
 # after the last test). Configure this program so that it is launched on a
 # scheduled timer which runs every 5 minutes.
-NumberOfNetworkTests=9
-SleepBetweenTestsSec=30
+NumberOfNetworkTests=4
+SleepBetweenTestsSec=60
 
 # Alternate speed for running this program in test mode.
 if [ "$testMode" = true ]
