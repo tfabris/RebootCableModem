@@ -312,26 +312,34 @@ LogMessage "dbg" "Logged in to $modemIp. PHPSESSID: $userIdCookie csrfp_token: $
 #  WORK IN PROGRESS - THIS ISN'T FUNCTIONAL YET
 #
 
+# Note: The -g parameter is important if trying to put the command directly into the URL.
+# https://stackoverflow.com/a/8333999
 curlParameters=(
-                 -i -s
+
+                 -i -s -g -v
                  -b $cookieFileName
 #                 -H "X-Requested-With:XMLHttpRequest"
-
 #                -H "X-CSRFP-Token:$csrfpToken"
 #                -H "X-CSRF-Token:$csrfpToken"
-#                -H "Content-Type:application/json"
+                -H "Content-Type:application/json"
 #                -H "Accept:application/json"
-#                 -d "{\"resetInfo\":[\"btn2\",\"Wifi\",\"admin\"]}"
-                 -d "{\"resetInfo\":[\"btn1\",\"Device\",\"admin\"]}"
+                -d "{\"resetInfo\":[\"btn1\",\"Device\",\"admin\"]}"
+#                -d resetInfo=[\"btn1\",\"Device\",\"admin\"]
+#                -d "{\"resetInfo\":[\"btn2\",\"Wifi\",\"admin\"]}"
 #                -d "[\"btn2\",\"Wifi\",\"admin\"]"
 #                -d "resetInfo=[\"btn1\",\"Device\",\"admin\"]"
+#                --data-urlencode "resetInfo=[\"btn1\",\"Device\",\"admin\"]"
 #                --referer "$rebootRefererString"
 #                --referer "$loginRefererString"
 #                --referer "http://$modemIp/troubleshooting_logs.php"                 
-#                http://$modemIp/actionHandler/restore_reboot.php
+#                "http://$modemIp/restore_reboot.php"
 #                "http://$modemIp/actionHandler/ajaxSet_Reset_Restore.php?resetInfo=[\"btn1\",\"Device\",\"admin\"]"
+#                "http://localhost/test.php?resetInfo=[\"btn1\",\"Device\",\"admin\"]"
+#                 http://localhost/test.php
                  http://$modemIp/actionHandler/ajaxSet_Reset_Restore.php
                 )
+
+LogMessage "dbg" "${curlParameters[7]}"
 # https://superuser.com/a/462400
 curlParametersPrintable=$( IFS=$' '; echo "${curlParameters[*]}" )
 userAgentString="User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.132 Safari/537.36"
@@ -359,8 +367,8 @@ LogMessage "dbg" "curl $curlParametersPrintable"
 # then
     # LogMessage "err" "TEST MODE: Not actually rebooting the modem at this time"
 # else
-    rebootReturn=$( curl ${curlParameters[@]} -H "$userAgentString")
-    # rebootReturn=$( curl ${curlParameters[@]})
+    # rebootReturn=$( curl ${curlParameters[@]} -H "$userAgentString")
+    rebootReturn=$( curl ${curlParameters[@]})
 # fi
 
 # Check the return message from the modem web page from the reboot command
@@ -379,11 +387,11 @@ else
     LogMessage "err" "Reboot command failed: $checkReturnMessage"
     LogMessage "dbg" "Reboot return data:"
     LogMessage "dbg" "---------------------------------------------------"
-    #LogMessage "dbg" "$rebootReturn"
-    LogMessage "dbg" "$checkReturnMessage"
-    LogMessage "dbg" "$( echo "$rebootReturn" | grep 'HTTP' )"
-    LogMessage "dbg" "$( echo "$rebootReturn" | grep -A 1 "\"content\"" )"
-    LogMessage "dbg" "$( echo "$rebootReturn" | grep 'btn1' )"
+    LogMessage "dbg" "$rebootReturn"
+    # LogMessage "dbg" "$checkReturnMessage"
+    # LogMessage "dbg" "$( echo "$rebootReturn" | grep 'HTTP' )"
+    # LogMessage "dbg" "$( echo "$rebootReturn" | grep -A 1 "\"content\"" )"
+    # LogMessage "dbg" "$( echo "$rebootReturn" | grep 'btn1' )"
     LogMessage "dbg" "---------------------------------------------------"
     exit 1
 fi
