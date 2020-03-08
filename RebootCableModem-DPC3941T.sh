@@ -311,6 +311,9 @@ LogMessage "dbg" "Logged in to $modemIp. PHPSESSID: $userIdCookie csrfp_token: $
 #
 #  WORK IN PROGRESS - THIS ISN'T FUNCTIONAL YET
 #
+# After much testing, my conclusion is that the cross site prevention features
+# are blocking this from working on the actual router. Need to figure out how
+# to properly answer these features. The -H X-CRSF-Token stuff is not helping yet.
 
 # Note: The -g parameter is important if trying to put the command directly into the URL.
 # https://stackoverflow.com/a/8333999
@@ -321,10 +324,20 @@ curlParameters=(
 #                 -H "X-Requested-With:XMLHttpRequest"
 #                -H "X-CSRFP-Token:$csrfpToken"
 #                -H "X-CSRF-Token:$csrfpToken"
-                -H "Content-Type:application/json"
+#                -H "Content-Type:application/json"
+#                -H "Content-Type:application/json;charset=utf-8"
+# This is the default content type sent by Jquery ajax according to one article I read.
+               -H "Content-Type:application/x-www-form-urlencoded;charset=UTF-8"
+# This is the actual data that is sent by jquery 1.9.1 as reproduced by duplicating the javascript.
+               -d "resetInfo=%5B%22btn1%22%2C%22Device%22%2C%22admin%22%5D"
 #                -H "Accept:application/json"
-                -d "{\"resetInfo\":[\"btn1\",\"Device\",\"admin\"]}"
-#                -d resetInfo=[\"btn1\",\"Device\",\"admin\"]
+#                -d "{\"resetInfo\":[\"btn1\",\"Device\",\"admin\"]}"
+#                -d "[{\"resetInfo\":[\"btn1\",\"Device\",\"admin\"]}]"
+#                --data-urlencode "[{\"resetInfo\":[\"btn1\",\"Device\",\"admin\"]}]"
+#                --data-urlencode "{\"resetInfo\":[\"btn1\",\"Device\",\"admin\"]}"
+#                --data-urlencode "{\\\"resetInfo\\\":[\\\"btn1\\\",\\\"Device\\\",\\\"admin\\\"]}"
+#                -d "resetInfo:[\"btn1\",\"Device\",\"admin\"]"
+#               -d resetInfo=[\"btn1\",\"Device\",\"admin\"]
 #                -d "{\"resetInfo\":[\"btn2\",\"Wifi\",\"admin\"]}"
 #                -d "[\"btn2\",\"Wifi\",\"admin\"]"
 #                -d "resetInfo=[\"btn1\",\"Device\",\"admin\"]"
@@ -335,11 +348,13 @@ curlParameters=(
 #                "http://$modemIp/restore_reboot.php"
 #                "http://$modemIp/actionHandler/ajaxSet_Reset_Restore.php?resetInfo=[\"btn1\",\"Device\",\"admin\"]"
 #                "http://localhost/test.php?resetInfo=[\"btn1\",\"Device\",\"admin\"]"
-#                 http://localhost/test.php
-                 http://$modemIp/actionHandler/ajaxSet_Reset_Restore.php
+# Works in my localhost test php file
+#                http://localhost/test.php
+# Fails in the actual router - gets 500 internal server error.
+               http://$modemIp/actionHandler/ajaxSet_Reset_Restore.php
                 )
 
-LogMessage "dbg" "${curlParameters[7]}"
+#LogMessage "dbg" "${curlParameters[7]}"
 # https://superuser.com/a/462400
 curlParametersPrintable=$( IFS=$' '; echo "${curlParameters[*]}" )
 userAgentString="User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.132 Safari/537.36"
