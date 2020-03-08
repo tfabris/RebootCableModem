@@ -313,21 +313,29 @@ LogMessage "dbg" "Logged in to $modemIp. PHPSESSID: $userIdCookie csrfp_token: $
 #
 
 curlParameters=(
-                 -i -s -X POST
- #                -b "PHPSESSID=$userIdCookie;csrfp_token=$csrfpToken"
+                 -i -s
                  -b $cookieFileName
- #                -H "X-CSRF-Token:$csrfpToken"
- #                -H "Content-Type:application/json"
- #                -H "Accept:text/html,application/json"
-                 -d "'{\"resetInfo\":[\"btn2\",\"Wifi\",\"admin\"]}'"
- #                --referer "$rebootRefererString"
+#                 -H "X-Requested-With:XMLHttpRequest"
+
+#                -H "X-CSRFP-Token:$csrfpToken"
+#                -H "X-CSRF-Token:$csrfpToken"
+#                -H "Content-Type:application/json"
+#                -H "Accept:application/json"
+#                 -d "{\"resetInfo\":[\"btn2\",\"Wifi\",\"admin\"]}"
+                 -d "{\"resetInfo\":[\"btn1\",\"Device\",\"admin\"]}"
+#                -d "[\"btn2\",\"Wifi\",\"admin\"]"
+#                -d "resetInfo=[\"btn1\",\"Device\",\"admin\"]"
+#                --referer "$rebootRefererString"
+#                --referer "$loginRefererString"
+#                --referer "http://$modemIp/troubleshooting_logs.php"                 
+#                http://$modemIp/actionHandler/restore_reboot.php
+#                "http://$modemIp/actionHandler/ajaxSet_Reset_Restore.php?resetInfo=[\"btn1\",\"Device\",\"admin\"]"
                  http://$modemIp/actionHandler/ajaxSet_Reset_Restore.php
                 )
 # https://superuser.com/a/462400
 curlParametersPrintable=$( IFS=$' '; echo "${curlParameters[*]}" )
+userAgentString="User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.132 Safari/537.36"
 LogMessage "dbg" "curl $curlParametersPrintable"
-
-
 
 # curlParameters="-i -s -X POST"
 # curlParameters+=" "
@@ -351,7 +359,8 @@ LogMessage "dbg" "curl $curlParametersPrintable"
 # then
     # LogMessage "err" "TEST MODE: Not actually rebooting the modem at this time"
 # else
-    rebootReturn=$( curl ${curlParameters[@]} )
+    rebootReturn=$( curl ${curlParameters[@]} -H "$userAgentString")
+    # rebootReturn=$( curl ${curlParameters[@]})
 # fi
 
 # Check the return message from the modem web page from the reboot command
@@ -370,7 +379,11 @@ else
     LogMessage "err" "Reboot command failed: $checkReturnMessage"
     LogMessage "dbg" "Reboot return data:"
     LogMessage "dbg" "---------------------------------------------------"
-    LogMessage "dbg" "$rebootReturn"
+    #LogMessage "dbg" "$rebootReturn"
+    LogMessage "dbg" "$checkReturnMessage"
+    LogMessage "dbg" "$( echo "$rebootReturn" | grep 'HTTP' )"
+    LogMessage "dbg" "$( echo "$rebootReturn" | grep -A 1 "\"content\"" )"
+    LogMessage "dbg" "$( echo "$rebootReturn" | grep 'btn1' )"
     LogMessage "dbg" "---------------------------------------------------"
     exit 1
 fi
@@ -386,6 +399,10 @@ fi
 # Some ideas about posting JSON with a CSRF token: https://stackoverflow.com/a/30257128
 
 # Some ideas about posting JSON to a site in general: https://stackoverflow.com/a/4315155
+
+# Another idea about using a totally different format to post AJAX to the URL: https://stackoverflow.com/q/44532922
+
+# Might be getting blocked by CSRF issues: https://markitzeroday.com/x-requested-with/cors/2017/06/29/csrf-mitigation-for-ajax-requests.html
 
 # Modem reboot page diagnostic information for later reference. This was
 # retrieved using the Chrome web browser and viewing the Chrome diagnostic
