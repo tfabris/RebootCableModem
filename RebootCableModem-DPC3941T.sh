@@ -76,7 +76,7 @@ programname="Reboot Cable Modem"
 # Logins will fail on this brand of modem without the referer strings being
 # present in the headers to the requests. Set up those strings here.
 loginRefererString="http://$modemIp/index.php"
-webcheckRefererString="http://$modemIp/at_a_glance.php"
+pageTwoRefererString="http://$modemIp/at_a_glance.php"
 rebootRefererString="http://$modemIp/restore_reboot.php"
 
 
@@ -268,7 +268,7 @@ curlParametersPrintable=$( IFS=$' '; echo "${curlParameters[*]}" )
 LogMessage "dbg" "Logging into cable modem"
 # Do not print this in normal circumstances - Since the username and password
 # are part of the printout. Leave this commented out unless debugging.
-# LogMessage "dbg" "curl $curlParametersPrintable"
+LogMessage "dbg" "curl $curlParametersPrintable"
 loginReturnData=$( curl ${curlParameters[@]} )
 
 # Get the cookie "PHPSESSID" number that is returned from the login, by using
@@ -302,7 +302,71 @@ then
 fi
 
 # Print login success to the console.
-LogMessage "dbg" "Logged in to $modemIp. PHPSESSID: $userIdCookie csrfp_token: $csrfpToken"
+LogMessage "dbg" "Logged into $modemIp. Page title:"
+LogMessage "dbg" "---------------------------------------------------"
+LogMessage "dbg" "$( echo "$loginReturnData" | grep -A 1 "\"content\"" )"
+LogMessage "dbg" ""
+LogMessage "dbg" "PHPSESSID: $userIdCookie csrfp_token: $csrfpToken"
+LogMessage "dbg" "---------------------------------------------------"
+
+
+# ------------------------------------------------------------------------------
+# Navigate to the next page. EXPERIMENTAL.
+# ------------------------------------------------------------------------------
+
+# curlParameters=(
+#                  -s -i -L
+#                  -b $cookieFileName
+#                  -c $cookieFileName
+#                  -H "X-CSRF-Token:$csrfpToken"
+#                  --referer "$pageTwoRefererString"
+#                  http://$modemIp/restore_reboot.php
+#                 )
+# curlParametersPrintable=$( IFS=$' '; echo "${curlParameters[*]}" )
+# LogMessage "dbg" "Navigating to restore_reboot page"
+# LogMessage "dbg" "curl $curlParametersPrintable"
+# pageTwoReturnData=$( curl ${curlParameters[@]} )
+
+# # Get the cookie "PHPSESSID" number that is returned from the login, by using
+# # grep and cut, to parse it out of the response string. Also get crsfp token.
+# # Also use tail -1 to get only the last match of any given one of these. For
+# # instance if the "-L" parameter allows it to return two pages, then, only
+# # grep the result for the second of the two pages.
+# userIdCookie=""
+# userIdCookie=$( echo "$pageTwoReturnData" | grep 'PHPSESSID=' | tail -1 | cut -f2 -d=|cut -f1 -d';')
+# csrfpToken=""
+# csrfpToken=$( echo "$pageTwoReturnData" | grep 'csrfp_token=' | tail -1 | cut -f2 -d=|cut -f1 -d';')
+
+# # Abort the script if the userid cookie is invalid.
+# if [ -z "$userIdCookie" ]
+# then
+#   LogMessage "err" "Failed to navigate to page two of $modemIp - userIdCookie invalid"
+#   LogMessage "dbg" "Page two return data:"
+#   LogMessage "dbg" "---------------------------------------------------"
+#   LogMessage "dbg" "$pageTwoReturnData"
+#   LogMessage "dbg" "$( echo "$pageTwoReturnData" | grep -A 1 "\"content\"" )"
+#   LogMessage "dbg" "---------------------------------------------------"
+#   exit 1
+# fi
+
+# # Abort the script if the csrfp token cookie is invalid.
+# if [ -z "$csrfpToken" ]
+# then
+#   LogMessage "err" "Failed to navigate to page two of $modemIp - csrfpToken invalid"
+#   LogMessage "dbg" "Page two return data:"
+#   LogMessage "dbg" "---------------------------------------------------"
+#   LogMessage "dbg" "$pageTwoReturnData"
+#   LogMessage "dbg" "---------------------------------------------------"
+#   exit 1
+# fi
+
+# # Print login success to the console.
+# LogMessage "dbg" "Navigated to page two of $modemIp. Page title:"
+# LogMessage "dbg" "---------------------------------------------------"
+# LogMessage "dbg" "$( echo "$pageTwoReturnData" | grep -A 1 "\"content\"" )"
+# LogMessage "dbg" ""
+# LogMessage "dbg" "PHPSESSID: $userIdCookie csrfp_token: $csrfpToken"
+# LogMessage "dbg" "---------------------------------------------------"
 
 
 # ------------------------------------------------------------------------------
@@ -314,6 +378,8 @@ LogMessage "dbg" "Logged in to $modemIp. PHPSESSID: $userIdCookie csrfp_token: $
 # After much testing, my conclusion is that the cross site prevention features
 # are blocking this from working on the actual router. Need to figure out how
 # to properly answer these features. The -H X-CRSF-Token stuff is not helping yet.
+# Look up http://10.0.0.1/CSRF-Protector-PHP/js/csrfprotector.js for more details. 
+# Also https://github.com/mebjas/CSRF-Protector-PHP/blob/master/readme.md
 
 # Note: The -g parameter is important if trying to put the command directly into the URL.
 # https://stackoverflow.com/a/8333999
@@ -321,38 +387,44 @@ curlParameters=(
 
                  -i -s -g -v
                  -b $cookieFileName
-#                 -H "X-Requested-With:XMLHttpRequest"
+#                -H "X-Requested-With:XMLHttpRequest"
 #                -H "X-CSRFP-Token:$csrfpToken"
 #                -H "X-CSRF-Token:$csrfpToken"
-#                -H "Content-Type:application/json"
-#                -H "Content-Type:application/json;charset=utf-8"
-# This is the default content type sent by Jquery ajax according to one article I read.
+#                --referer "$rebootRefererString"
+#                --referer "$loginRefererString"
+#                --referer "http://$modemIp/troubleshooting_logs.php"                 
+
+# This is the default content-type sent by Jquery ajax, according to one article I read.
                -H "Content-Type:application/x-www-form-urlencoded;charset=UTF-8"
 # This is the actual data that is sent by jquery 1.9.1 as reproduced by duplicating the javascript.
-               -d "resetInfo=%5B%22btn1%22%2C%22Device%22%2C%22admin%22%5D"
-#                -H "Accept:application/json"
+#               -d "resetInfo=%5B%22btn1%22%2C%22Device%22%2C%22admin%22%5D"
+# Alternative more-readable way of doing the above, results in identical output:
+#               --data-urlencode "resetInfo=[\"btn1\",\"Device\",\"admin\"]"
+                --data-urlencode "resetInfo=[\"btn2\",\"Wifi\",\"admin\"]"
+
+# Works in my localhost test php file
+#                http://localhost/test.php
+# Fails in the actual router - gets 500 internal server error.
+               http://$modemIp/actionHandler/ajaxSet_Reset_Restore.php
+                )
+
+# After seeing the actual Jquery 1.9.1 output, I believe that all variations with
+# curly brackets and colons are incorrect. Also, the original javascript source
+# does not specify content-type so I believe it defaults to the one described
+# above and these content types are also wrong.
 #                -d "{\"resetInfo\":[\"btn1\",\"Device\",\"admin\"]}"
 #                -d "[{\"resetInfo\":[\"btn1\",\"Device\",\"admin\"]}]"
 #                --data-urlencode "[{\"resetInfo\":[\"btn1\",\"Device\",\"admin\"]}]"
 #                --data-urlencode "{\"resetInfo\":[\"btn1\",\"Device\",\"admin\"]}"
 #                --data-urlencode "{\\\"resetInfo\\\":[\\\"btn1\\\",\\\"Device\\\",\\\"admin\\\"]}"
 #                -d "resetInfo:[\"btn1\",\"Device\",\"admin\"]"
-#               -d resetInfo=[\"btn1\",\"Device\",\"admin\"]
 #                -d "{\"resetInfo\":[\"btn2\",\"Wifi\",\"admin\"]}"
-#                -d "[\"btn2\",\"Wifi\",\"admin\"]"
-#                -d "resetInfo=[\"btn1\",\"Device\",\"admin\"]"
-#                --data-urlencode "resetInfo=[\"btn1\",\"Device\",\"admin\"]"
-#                --referer "$rebootRefererString"
-#                --referer "$loginRefererString"
-#                --referer "http://$modemIp/troubleshooting_logs.php"                 
-#                "http://$modemIp/restore_reboot.php"
+#                -H "Content-Type:application/json"
+#                -H "Content-Type:application/json;charset=utf-8"
+# Putting the request directly on the URL line gives an "invald input" error from the modem.
 #                "http://$modemIp/actionHandler/ajaxSet_Reset_Restore.php?resetInfo=[\"btn1\",\"Device\",\"admin\"]"
 #                "http://localhost/test.php?resetInfo=[\"btn1\",\"Device\",\"admin\"]"
-# Works in my localhost test php file
-#                http://localhost/test.php
-# Fails in the actual router - gets 500 internal server error.
-               http://$modemIp/actionHandler/ajaxSet_Reset_Restore.php
-                )
+#                "http://$modemIp/restore_reboot.php"
 
 #LogMessage "dbg" "${curlParameters[7]}"
 # https://superuser.com/a/462400
