@@ -38,7 +38,7 @@
 # Test mode. Set to true to run this program in test mode. Set to false or any
 # other value to run this program normally. This should be always set to
 # "false" unless you are debugging this program.
-testMode=true
+testMode=false
 
 # Set the modem address on your network.
 modemIp="10.0.0.1"
