@@ -22,7 +22,7 @@
 # password of your cable modem, on one line, separated by a space. Place it in
 # the same folder as this script, and perform a "chmod 660 modem-creds" on it.
 #
-# Perform a "chmod 744 RebootCableModem.sh" on this script file.
+# Perform a "chmod 744 *.sh" on this script file.
 # 
 # Edit the modemIp variable, below, to your modem address on your LAN.
 #
