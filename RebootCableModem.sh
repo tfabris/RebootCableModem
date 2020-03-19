@@ -1,7 +1,7 @@
 #!/bin/bash 
 
 # ------------------------------------------------------------------------------
-# Script to reboot an Xfinity Cisco DPC3941T cablemodem if the Internet is down.
+# Script to reboot a cable modem if the Internet is down.
 #
 # Run this program on a scheduled timer so that it launches every five
 # minutes. For example, you could create a Cron job for this task. For
