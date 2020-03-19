@@ -5,9 +5,12 @@ RebootCableModem
 https://github.com/tfabris/RebootCableModem
 
 RebootCableModem is a set of Bash scripts which reboots my cable modem if the
-Internet is down for more than a few minutes. I have owned two cable modems
-recently, an Xfinity SMC SMCD3GNV and an Xfinity Cisco DPC3941T, and there is
-a separate script for each one of those modems in this repository.
+Internet is down for more than a few minutes. It will also, optionally, reboot
+the cable modem daily at a specific time on the clock.
+
+I have owned two cable modems recently, an Xfinity SMC SMCD3GNV and an Xfinity
+Cisco DPC3941T, and there is a separate configuration for each one of those
+modems in this repository.
 
 This can be run as a Cron job on any Linux or Mac system. I'm running it under
 the Task Scheduler on the Synology NAS on my LAN.
@@ -37,10 +40,19 @@ line of ASCII text: A username, a space, and then a password. These will be
 used for connecting to the web interface of your cable modem. Create the
 "modem-creds" file and place it in the same directory as these scripts.
 
+####  Edit the modemType variable:
+Edit the "modemType" variable inside the script, and set it to the name of one
+of the supported modems. Follow the instructions in the code comments in the
+script.
+
 ####  Edit the modemIp variable:
-Edit the "modemIp" variable inside the script you intend to use (one of the
-RebootCableModem-xxxxx.sh scripts), and set it to the address of the cable
-modem on your LAN.
+Edit the "modemIp" variable inside the script, and set it to the address of
+the cable modem on your LAN.
+
+####  Edit the dailyReboot variables:
+Edit the "dailyReboot" variables inside the script. Enable or disable the
+feature, and set the time of day, by following the instructions in the code
+comments in the script.
 
 ####  Set file permissions:
 Set the access permissions on the folder which contains this script, the
@@ -54,10 +66,9 @@ script itself, and its credentials file, using a shell prompt:
 ####  Create automated task to run the script:
 If running this on a Linux computer, create a Cron job for this script, or, if
 you are running it on a Synology NAS via the Synology Task Scheduler, create a
-task for it there. Create the job so that it runs the desired script (one of
-the RebootCableModem-xxxxx.sh scripts) once every five minutes continuously.
-If you have edited the script to alter its timing intervals, then configure
-the job accordingly.
+task for it there. Create the job so that it runs the script once every five
+minutes continuously. If you have edited the script to alter its timing
+intervals, then configure the job accordingly.
 
 
 Behavior
@@ -78,6 +89,10 @@ it to run 14 checks at intervals of 60 seconds. If you modify those values,
 then configure the scheduled task to run at the appropriate interval to match
 the changes you made. For instance, if you program it to make 14 checks at one
 check per minute, then run the scheduled task every 15 minutes.
+
+If you set the variable "dailyReboot" to "true", it will also perform a
+"self-healing" reboot of the modem daily, at the time specified in the script.
+See the code comments in the script for details.
 
 
 Caution

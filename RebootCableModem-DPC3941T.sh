@@ -43,6 +43,11 @@ testMode=false
 # Set the modem address on your network.
 modemIp="10.0.0.1"
 
+# Type of modem. Current available types are:
+#     DPC3941T
+#     SMCD3GNV
+modemType="DPC3941T"
+
 # Set number of loops, and the number of seconds, of the network test loop. By
 # default, this program runs for about 4+ minutes total (there is no sleep
 # after the last test). Configure this program so that it is launched on a
@@ -100,10 +105,6 @@ TestSite="8.8.8.8"
 # Program name used in log messages.
 programname="Reboot Cable Modem"
 
-# Logins will fail on this brand of modem without the referer string being
-# present in the headers to the requests. Set up the string here.
-loginRefererString="http://$modemIp/index.php"
-
 
 #------------------------------------------------------------------------------
 # Function blocks
@@ -157,10 +158,191 @@ LogMessage()
 
 
 #------------------------------------------------------------------------------
-# Function: Reboot an Xfinity Cisco DPC3941T cablemodem.
+# Function: Reboot a modem based on the type of modem.
+# 
+# Type of modem is defined by global variable $modemType.
 #------------------------------------------------------------------------------
 RebootModem()
 {
+  if [ "$modemType" = "DPC3941T" ]
+  then
+    RebootDPC3941T
+    return 0
+  fi
+
+  if [ "$modemType" = "SMCD3GNV" ]
+  then
+    RebootSMCD3GNV
+    return 0
+  fi
+
+  # At this point, one of the modem reboots above should have exited and this
+  # function should no longer be running. The code below is never expected to
+  # be hit unless there is a problem with the $modemType variable.
+  LogMessage "err" "Error in script - modem type $modemType is not found"
+  exit 1
+}
+
+#------------------------------------------------------------------------------
+# Function: Reboot an Xfinity SMC SMCD3GNV cable modem.
+#
+# The technique for the modem login and reboot is from here originally:
+# https://github.com/stuffo/rebootHitronRouter/blob/master/rebootHitronRouter.sh
+# I started with that example because it was written to work on a modem whose
+# firmware is similar to mine. However, I still had to make additional tweaks
+# and changes, required for my particular model of modem.
+#------------------------------------------------------------------------------
+RebootSMCD3GNV()
+{
+  # Logins will fail on this brand of modem without the referer strings being
+  # present in the headers to the requests. Set up those strings here.
+  loginRefererString="http://$modemIp/home_loggedout.asp"
+  webcheckRefererString="http://$modemIp/user/at_a_glance.asp"
+  rebootRefererString="http://$modemIp/user/restore_reboot.asp"
+
+  # ------------------------------------------------------------------------------
+  # Login
+  # ------------------------------------------------------------------------------
+
+  # First, perform the login to the cable modem. Note that the programmers of
+  # this modem's login page changed their username and password variable names
+  # to something different than the usual. Apparently they thought this was
+  # funny.
+  LogMessage "dbg" "curl -s -i -d \"usernamehaha=$username\" -d \"passwordhaha=........\" --referer \"$loginRefererString\" http://$modemIp/goform/login"
+  loginReturnData=$( curl -s -i -d "usernamehaha=$username" -d "passwordhaha=$password" --referer "$loginRefererString" http://$modemIp/goform/login )
+
+  # Get the cookie "userid" number that is returned from the login, by using
+  # grep and cut, to parse it out of the response string.
+  userIdCookie=$( echo "$loginReturnData" | grep 'userid=' | cut -f2 -d=|cut -f1 -d';' )
+
+  # Abort the script if the userid cookie is invalid.
+  if [ -z "$userIdCookie" ]
+  then
+    LogMessage "err" "Failed to login to $modemIp"
+    exit 1
+  fi
+
+  # Print login success to the console.
+  LogMessage "dbg" "Logged in to $modemIp. Userid: $userIdCookie"
+
+
+  # ------------------------------------------------------------------------------
+  # Retrieve webcheck number
+  # ------------------------------------------------------------------------------
+
+  # Get the "webcheck" value, which is a hidden number on the modem's reboot
+  # page which changes every time. Start by surfing to the modem's reboot page.
+  LogMessage "dbg" "curl -s -i -b \"userid=$userIdCookie;\" --referer \"$webcheckRefererString\" http://$modemIp/user/restore_reboot.asp"
+  webcheckReturn=$( curl -s -i -b "userid=$userIdCookie;" --referer "$webcheckRefererString" http://$modemIp/user/restore_reboot.asp )
+
+  # The webcheck number is located in a line that looks like this:
+  #       <input type="hidden" value="111111111111" name="webcheck">
+  # Use "grep" and "cut" to parse out the number from that line.
+  webcheckNumber=$( echo "$webcheckReturn" | grep -m 1 webcheck | cut -d '"' -f4 )
+
+  # Abort the script if the webcheck number is invalid.
+  if [ -z "$webcheckNumber" ]
+  then
+    LogMessage "err" "Failed to retrieve webcheck number"
+    exit 1
+  fi
+
+  # Print webcheck success to the console.
+  LogMessage "dbg" "Webcheck retrieved: $webcheckNumber"
+
+
+  # ------------------------------------------------------------------------------
+  # Reboot modem
+  # ------------------------------------------------------------------------------
+
+  # Now that we have the webcheck number, perform the actual reboot. First, echo
+  # to the console what the command will be that will perform the reboot.
+  LogMessage "dbg" "curl -i -s -b \"userid=$userIdCookie;\" -d \"reboot=1\" -d \"file=restore_reboot\" -d \"dir=user/\" -d \"webcheck=$webcheckNumber\" --referer \"$rebootRefererString\" http://$modemIp/gocusform/Reboot | head -1"
+
+  # Only reboot the cable modem if this script is not running in test mode.
+  if [ "$testMode" = true ]
+  then
+      LogMessage "err" "TEST MODE: Not actually rebooting the modem at this time"
+  else
+      # I am not sure how many of the weird little data values I need to
+      # include, so I am including the logical-looking ones (from the diagnostic
+      # data below). Use "-i" to see response headers, and then "head -1" to get
+      # their first line.
+      rebootReturn=$( curl -i -s -b "userid=$userIdCookie;" -d "reboot=1" -d "file=restore_reboot" -d "dir=user/" -d "webcheck=$webcheckNumber" --referer "$rebootRefererString" http://$modemIp/gocusform/Reboot | head -1 )
+  fi
+
+  # Check the return message from the modem web page from the reboot command
+  # (which is the first line of the response headers we got with "head -1").
+  if [ "$rebootReturn" == "HTTP/1.0 200 OK" ]
+  then
+      LogMessage "info" "Reboot command successfully issued"
+
+      # Must sleep a long time after rebooting the modem, or else it would just
+      # try to reboot the thing again, since the network will still be down for
+      # a long time while the modem is rebooting.
+      sleep $SleepAfterReboot
+      exit 0
+  else 
+      LogMessage "err" "Reboot command failed: $rebootReturn"
+      exit 1
+  fi
+
+    # ------------------------------------------------------------------------------
+    # Reference information
+    # ------------------------------------------------------------------------------
+
+    # Modem reboot page diagnostic information for SMCD3GNV for later
+    # reference. This was retrieved using the Chrome web browser and viewing
+    # the Chrome diagnostic info of the page after performing an actual reboot
+    # by hand. In particular, the data values at the bottom of the list are
+    # what is needed to successfully reboot the modem.
+
+    # Request URL: http://10.0.0.1/gocusform/Reboot
+    # Request Method: POST
+    # Status Code: 200 OK
+    # Remote Address: 10.0.0.1:80
+    # Referrer Policy: no-referrer-when-downgrade
+    # Cache-control: no-cache
+    # Content-Type: text/html
+    # Pragma: no-cache
+    # Server: GoAhead-Webs
+    # X-DNS-Prefetch-Control: off
+    # Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3
+    # Accept-Encoding: gzip, deflate
+    # Accept-Language: en-US,en;q=0.9
+    # Cache-Control: no-cache
+    # Connection: keep-alive
+    # Content-Length: 121
+    # Content-Type: application/x-www-form-urlencoded
+    # Cookie: userid=11111111111
+    # cookie-installing-permission: required
+    # Host: 10.0.0.1
+    # Origin: http://10.0.0.1
+    # Pragma: no-cache
+    # Referer: http://10.0.0.1/user/restore_reboot.asp
+    # Upgrade-Insecure-Requests: 1
+    # User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/78.0.3904.97 Safari/537.36
+    # reboot: 1
+    # resetWiFiModule: 
+    # rebootWiFi: 
+    # restoreWiFi: 
+    # resetPw: 
+    # restoreDef: 
+    # file: restore_reboot
+    # dir: user/
+    # webcheck: 11111111111  
+}
+
+
+#------------------------------------------------------------------------------
+# Function: Reboot an Xfinity Cisco DPC3941T cable modem.
+#------------------------------------------------------------------------------
+RebootDPC3941T()
+{
+  # Logins will fail on this brand of modem without the referer string being
+  # present in the headers to the requests. Set up the string here.
+  loginRefererString="http://$modemIp/index.php"
+
   # ------------------------------------------------------------------------------
   # Login
   # ------------------------------------------------------------------------------
@@ -337,6 +519,74 @@ RebootModem()
       LogMessage "dbg" "---------------------------------------------------"
       exit 1
   fi
+
+    # ------------------------------------------------------------------------------
+    # Reference information
+    # ------------------------------------------------------------------------------
+
+    # Information about the CRSF protection features employed by the Cisco
+    # DPC3941T cable modem, which made it initially very difficult to make this
+    # script work successfully: https://github.com/mebjas/CSRF-Protector-PHP
+
+    # The modem uses a Javacript AJAX/JSON call to a different embedded PHP page
+    # within the modem when you click on the buttons on the reset/restore page.
+    # The code is at http://10.0.0.1/actionHandler/ajaxSet_Reset_Restore.php on
+    # the modem itself, but this same code has also been posted on GitHub here if
+    # you want to browse the entire code tree: https://github.com/Gowthami10/webui
+
+    # Some ideas about posting JSON with a CSRF token. This turned out to be wrong
+    # because the CRSF protector on this modem does not use the "X-CRSF-Token"
+    # header: https://stackoverflow.com/a/30257128
+
+    # Some ideas about posting JSON to a site in general. This turned out to be
+    # wrong because the curly brackets are an incorrect syntax for the parser that
+    # this modem uses: https://stackoverflow.com/a/4315155
+
+    # Another idea about using a totally different format to post AJAX to the URL.
+    # It turns out that I did not need the "X-Requested-With" header, but it had
+    # some good ideas about the JSON format: https://stackoverflow.com/q/44532922
+
+    # Modem reboot page diagnostic information for later reference. This was
+    # retrieved using the Chrome web browser and viewing the Chrome diagnostic
+    # info of the page after performing an actual reboot by hand. (Login to the
+    # page, and in the Network tab, select the filename that got loaded and then
+    # look at the right-hand pane and click on Headers.) 
+
+    # Request URL: http://10.0.0.1/check.php
+    # Request Method: POST
+    # Status Code: 302 Found
+    # Remote Address: 10.0.0.1:80
+    # Referrer Policy: no-referrer-when-downgrade
+    # Cache-Control: no-store, no-cache, must-revalidate
+    # Content-Length: 638
+    # Content-Security-Policy: default-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' 'unsafe-eval'; frame-src 'self' 'unsafe-inline' 'unsafe-eval'; font-src 'self' 'unsafe-inline' 'unsafe-eval'; form-action 'self' 'unsafe-inline' 'unsafe-eval'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; img-src 'self'; connect-src 'self'; object-src 'none'; media-src 'none'; script-nonce 'none'; plugin-types 'none'; reflected-xss 'none'; report-uri 'none';
+    # Content-type: text/html; charset=UTF-8
+    # Date: Fri, 06 Mar 2020 19:00:28 GMT
+    # Expires: Thu, 19 Nov 1981 08:52:00 GMT
+    # location: at_a_glance.php
+    # Pragma: no-cache
+    # Server: Xfinity Broadband Router Server
+    # X-Content-Type-Options: nosniff
+    # X-DNS-Prefetch-Control: off
+    # X-Frame-Options: deny
+    # X-robots-tag: noindex,nofollow
+    # X-XSS-Protection: 1; mode=block
+    # Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9
+    # Accept-Encoding: gzip, deflate
+    # Accept-Language: en-US,en;q=0.9
+    # Cache-Control: no-cache
+    # Connection: keep-alive
+    # Content-Length: 32
+    # Content-Type: application/x-www-form-urlencoded
+    # Cookie: PHPSESSID=xxxxxxxxxxx; csrfp_token=xxxxxxxxxx
+    # Host: 10.0.0.1
+    # Origin: http://10.0.0.1
+    # Pragma: no-cache
+    # Referer: http://10.0.0.1/index.php
+    # Upgrade-Insecure-Requests: 1
+    # User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.132 Safari/537.36
+    # username: xxxxxxxx
+    # password: xxxxxxxx
 }
 
 
@@ -465,73 +715,4 @@ else
 fi
 
 
-
-
-# ------------------------------------------------------------------------------
-# Reference information
-# ------------------------------------------------------------------------------
-
-# Information about the CRSF protection features employed by the Cisco
-# DPC3941T cable modem, which made it initially very difficult to make this
-# script work successfully: https://github.com/mebjas/CSRF-Protector-PHP
-
-# The modem uses a Javacript AJAX/JSON call to a different embedded PHP page
-# within the modem when you click on the buttons on the reset/restore page.
-# The code is at http://10.0.0.1/actionHandler/ajaxSet_Reset_Restore.php on
-# the modem itself, but this same code has also been posted on GitHub here if
-# you want to browse the entire code tree: https://github.com/Gowthami10/webui
-
-# Some ideas about posting JSON with a CSRF token. This turned out to be wrong
-# because the CRSF protector on this modem does not use the "X-CRSF-Token"
-# header: https://stackoverflow.com/a/30257128
-
-# Some ideas about posting JSON to a site in general. This turned out to be
-# wrong because the curly brackets are an incorrect syntax for the parser that
-# this modem uses: https://stackoverflow.com/a/4315155
-
-# Another idea about using a totally different format to post AJAX to the URL.
-# It turns out that I did not need the "X-Requested-With" header, but it had
-# some good ideas about the JSON format: https://stackoverflow.com/q/44532922
-
-# Modem reboot page diagnostic information for later reference. This was
-# retrieved using the Chrome web browser and viewing the Chrome diagnostic
-# info of the page after performing an actual reboot by hand. (Login to the
-# page, and in the Network tab, select the filename that got loaded and then
-# look at the right-hand pane and click on Headers.) 
-
-# Request URL: http://10.0.0.1/check.php
-# Request Method: POST
-# Status Code: 302 Found
-# Remote Address: 10.0.0.1:80
-# Referrer Policy: no-referrer-when-downgrade
-# Cache-Control: no-store, no-cache, must-revalidate
-# Content-Length: 638
-# Content-Security-Policy: default-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' 'unsafe-eval'; frame-src 'self' 'unsafe-inline' 'unsafe-eval'; font-src 'self' 'unsafe-inline' 'unsafe-eval'; form-action 'self' 'unsafe-inline' 'unsafe-eval'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; img-src 'self'; connect-src 'self'; object-src 'none'; media-src 'none'; script-nonce 'none'; plugin-types 'none'; reflected-xss 'none'; report-uri 'none';
-# Content-type: text/html; charset=UTF-8
-# Date: Fri, 06 Mar 2020 19:00:28 GMT
-# Expires: Thu, 19 Nov 1981 08:52:00 GMT
-# location: at_a_glance.php
-# Pragma: no-cache
-# Server: Xfinity Broadband Router Server
-# X-Content-Type-Options: nosniff
-# X-DNS-Prefetch-Control: off
-# X-Frame-Options: deny
-# X-robots-tag: noindex,nofollow
-# X-XSS-Protection: 1; mode=block
-# Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9
-# Accept-Encoding: gzip, deflate
-# Accept-Language: en-US,en;q=0.9
-# Cache-Control: no-cache
-# Connection: keep-alive
-# Content-Length: 32
-# Content-Type: application/x-www-form-urlencoded
-# Cookie: PHPSESSID=xxxxxxxxxxx; csrfp_token=xxxxxxxxxx
-# Host: 10.0.0.1
-# Origin: http://10.0.0.1
-# Pragma: no-cache
-# Referer: http://10.0.0.1/index.php
-# Upgrade-Insecure-Requests: 1
-# User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.132 Safari/537.36
-# username: xxxxxxxx
-# password: xxxxxxxx
 
