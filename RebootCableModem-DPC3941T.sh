@@ -57,9 +57,29 @@ SleepBetweenTestsSec=60
 # sleep several minutes after rebooting, so that it blocks a subsequent re-run
 # of itself in the Synology Task Manager while it waits for the reboot to
 # complete. After this timer is done, the script will exit and the next timed
-# run of the script will go back to rechecking to see if the Internet came
-# back up.
+# run of the script will go back to rechecking if the Internet came back up.
 SleepAfterReboot=420
+
+# Daily reboot. Set to true in order to perform a "self-healing" reboot of the
+# modem once per day. Normally, this script will reboot the modem if the
+# Internet is down for several minutes in a row. Setting this to true will
+# make the script also reboot it once per day, even without any problems.
+dailyReboot=true
+
+# Daily reboot time. The time of day to reboot the modem. Format: 24-hour
+# HH:MM format. Set these two values to a range of the same time period that
+# you have configured this script to run for, plus two minutes. For example,
+# if you run this script every five minutes, then set these values to a range
+# of seven minutes. The idea is that, if this script normally runs once every
+# five minutes (but is not perfectly accurate to that five minutes), then at
+# some point during one of its script runs, it will hit this time window.
+# Though if the script is set to run every five minutes, then setting this
+# window to 7 minutes could theoretically cause the script to hit this time
+# window twice, this script also has a "pause" after executing the reboot
+# itself, so the script will still be running (pausing) for longer than those
+# five minutes, so there won't be a second retrigger of this window.
+dailyRebootTimeStart=04:30
+dailyRebootTimeEnd=04:37
 
 # Alternate speed for running this program in test mode.
 if [ "$testMode" = true ]
@@ -137,6 +157,190 @@ LogMessage()
 
 
 #------------------------------------------------------------------------------
+# Function: Reboot an Xfinity Cisco DPC3941T cablemodem.
+#------------------------------------------------------------------------------
+RebootModem()
+{
+  # ------------------------------------------------------------------------------
+  # Login
+  # ------------------------------------------------------------------------------
+
+  # First, perform the login to the cable modem. Use curl's -L (location)
+  # parameter to allow it to redirect to a new page when the login occurs. This
+  # allows the second, redirected page, to return the csrfp_token cookie, which
+  # is not returned on the first page of the request, only the second. I've
+  # noticed that the second redirected page doesn't come through fully unless
+  # I'm using a cookie file for Curl, but, that doesn't seem to be necessary.
+  # The user cookie and the CSRFP token still work even if I don't have an
+  # explicit cookie file and even if the full second page doesn't come through.
+  # Still, the -L parameter seems to be needed in order for the cookie and the
+  # CSRFP token to be retrieved and to work.
+
+  # Set the parameters for the Curl call that will log into the modem. This
+  # technique works as long as none of the parameters contain spaces.
+  # https://stackoverflow.com/a/27928302
+  curlParameters=(
+                   -s -i -L
+                   -d "username=$username"
+                   -d "password=$password"
+                   --referer "$loginRefererString"
+                   http://$modemIp/check.php
+                  )
+
+  # Create a string for printing the parameters for debugging purposes.
+  # https://superuser.com/a/462400
+  curlParametersPrintable=$( IFS=$' '; echo "${curlParameters[*]}" )
+
+  # Log into the modem.
+  LogMessage "dbg" "Logging into cable modem"
+
+  # Do not print the login string in normal circumstances, since the username
+  # and password are part of the printout. Leave this commented out unless
+  # debugging.
+  # LogMessage "dbg" "curl $curlParametersPrintable"
+  loginReturnData=$( curl ${curlParameters[@]} )
+
+  # Get the cookie "PHPSESSID" number (essentially the user login cookie) that
+  # is returned from the login, as well as the all-important crsfp token which
+  # is used by the modem's CRSF prevention features. Do this by using grep and
+  # cut to parse it out of the curl response string. Also use "tail -1" to get
+  # only the last match of any given one of these. For instance if the curl "-L"
+  # parameter allows it to return two pages (the second page occurring from a
+  # redirect from the first page), then, only grep the result for the second of
+  # the two pages.
+  userIdCookie=$( echo "$loginReturnData" | grep 'PHPSESSID=' | tail -1 | cut -f2 -d=|cut -f1 -d';')
+  csrfpToken=$( echo "$loginReturnData" | grep 'csrfp_token=' | tail -1 | cut -f2 -d=|cut -f1 -d';')
+
+  # Abort the script if the userid cookie is invalid.
+  if [ -z "$userIdCookie" ]
+  then
+    LogMessage "err" "Failed to login to $modemIp - userIdCookie invalid"
+    LogMessage "dbg" "Login return data:"
+    LogMessage "dbg" "---------------------------------------------------"
+    LogMessage "dbg" "$loginReturnData"
+    LogMessage "dbg" "---------------------------------------------------"
+    exit 1
+  fi
+
+  # Abort the script if the csrfp token cookie is invalid.
+  if [ -z "$csrfpToken" ]
+  then
+    LogMessage "err" "Failed to login to $modemIp - csrfpToken invalid"
+    LogMessage "dbg" "Login return data:"
+    LogMessage "dbg" "---------------------------------------------------"
+    LogMessage "dbg" "$loginReturnData"
+    LogMessage "dbg" "---------------------------------------------------"
+    exit 1
+  fi
+
+  # Print login success to the console.
+  LogMessage "dbg" "Logged into $modemIp. PHPSESSID: $userIdCookie csrfp_token: $csrfpToken"
+
+
+  # ------------------------------------------------------------------------------
+  # Reboot modem
+  # ------------------------------------------------------------------------------
+
+  # Decide which part of the modem we are rebooting. When looking at the modem's
+  # "Reset-Restore" page, the first two buttons (btn1 and btn2 in its code) will
+  # reboot either the entire modem, or just its Wifi radio, respectively. This
+  # is determined by two variables in the Javascript, which are passed on to a
+  # PHP page via an AJAX/JSON data header, which then reboots the modem. I'm
+  # taking advantage of this, and rebooting only the Wifi when in "test" mode.
+  buttonName=""
+  rebootDevice=""
+  if [ "$testMode" = true ]
+  then
+    LogMessage "dbg" "TEST MODE: Rebooting only the WiFi radio at this time"
+    buttonName="btn2"
+    rebootDevice="Wifi"
+  else
+    LogMessage "dbg" "Full mode: Rebooting the entire cable modem device."
+    buttonName="btn1"
+    rebootDevice="Device"
+  fi
+
+  # Set the parameters for the Curl call that will reboot the modem. This
+  # technique works as long as none of the parameters contain spaces.
+  # https://stackoverflow.com/a/27928302
+  curlParameters=(
+                  -i -s
+
+                  # In order to reboot the modem, you need both the user's
+                  # session cookie, as well as the "csrfp_token" which is part
+                  # of the cookie information retrieved at login time. See
+                  # https://github.com/mebjas/CSRF-Protector-PHP and
+                  # http://10.0.0.1/CSRF-Protector-PHP/js/csrfprotector.js for
+                  # the details of how its CSRF protection feature works.
+                  # Note: I am using an alternative way to send the two cookies
+                  # directly in the curl call, without having to resort to a
+                  # cookie file on the hard disk.
+                  -b "PHPSESSID=$userIdCookie;csrfp_token=$csrfpToken"
+
+                  # Note: "X-CSRF-Token" does not work. You must format the
+                  # header "their way" which is "csrfp_token:$csrfpToken"
+                  -H "csrfp_token:$csrfpToken"
+
+                  # The modem's Javascript code uses the JQuery library to do
+                  # its business. This is the default content-type sent by
+                  # JQuery's "ajax()", command, according to my research.
+                  -H "Content-Type:application/x-www-form-urlencoded;charset=UTF-8"
+
+                  # Note: all variations of sending the AJAX/JSON information
+                  # which uses curly brackets and colons were incorrect. Though
+                  # there were many examples on the web which showed the AJAX as
+                  # having curly brackets, this did not work. For instance it
+                  # cannot be -d "{\"resetInfo\":[\"btn1\",\"Device\",\"admin\"]}"
+
+                  # This is the actual AJAX data string that is sent by jquery
+                  # 1.9.1, which I determined by duplicating the router's
+                  # javascript in a localhost installation and then debugging
+                  # it. This is how I found that the curly brackets were wrong.
+                  # -d "resetInfo=%5B%22btn1%22%2C%22Device%22%2C%22admin%22%5D"
+
+                  # Alternative, more-readable way of doing the above, which
+                  # results in identical output to the above:
+                  --data-urlencode "resetInfo=[\"$buttonName\",\"$rebootDevice\",\"admin\"]"
+
+                  # URL of the PHP file on the modem which performs the actual
+                  # reboot, based on the data in the JSON "resetInfo" array.
+                  http://$modemIp/actionHandler/ajaxSet_Reset_Restore.php
+                 )
+
+  # Create a string for printing the parameters for debugging purposes.
+  # https://superuser.com/a/462400
+  curlParametersPrintable=$( IFS=$' '; echo "${curlParameters[*]}" )
+
+  # Finally reboot the modem.
+  LogMessage "dbg" "curl $curlParametersPrintable"
+  rebootReturn=$( curl ${curlParameters[@]})
+
+  # Check the return message from the modem web page from the reboot command,
+  # which is the first line of the response headers, gotten with "head -1", and
+  # the newlines and carriage returns removed with tr -d.
+  checkReturnMessage=`echo "${rebootReturn}" | head -1 | tr -d '\r' | tr -d '\n'`
+
+  if [ "$checkReturnMessage" == "HTTP/1.1 200 OK" ]
+  then
+      LogMessage "info" "Reboot command successfully issued"
+
+      # Must sleep a long time after rebooting the modem, or else it would just
+      # try to reboot the thing again, since the network will still be down for
+      # a long time while the modem is rebooting.
+      sleep $SleepAfterReboot
+      exit 0
+  else 
+      LogMessage "err" "Reboot command failed: $checkReturnMessage"
+      LogMessage "dbg" "Reboot return data:"
+      LogMessage "dbg" "---------------------------------------------------"
+      LogMessage "dbg" "$rebootReturn"
+      LogMessage "dbg" "---------------------------------------------------"
+      exit 1
+  fi
+}
+
+
+#------------------------------------------------------------------------------
 # Main Program Code
 #------------------------------------------------------------------------------
 
@@ -171,6 +375,24 @@ then
   exit 1
 fi
 
+
+# ------------------------------------------------------------------------------
+# Check if it is time for the daily modem reboot.
+# ------------------------------------------------------------------------------
+
+# Use technique described here: https://unix.stackexchange.com/a/395936
+currentTime=$(date +%H:%M)
+if [ "$dailyReboot" = true ]
+then
+  if [[ "$currentTime" > "$dailyRebootTimeStart" ]] && [[ "$currentTime" < "$dailyRebootTimeEnd" ]]
+  then
+       LogMessage "info" "Current time is $currentTime - Performing daily modem reboot"
+       RebootModem
+       exit 0
+  else
+       LogMessage "dbg" "Current time is $currentTime - Not within range of $dailyRebootTimeStart to $dailyRebootTimeEnd - No daily reboot to be performed during this run"
+  fi
+fi
 
 # ------------------------------------------------------------------------------
 # Check for Internet
@@ -235,191 +457,14 @@ done
 if [ "$numberOfNetworkFailures" -eq $NumberOfNetworkTests ]
 then
   LogMessage "err" "Internet connection is down - rebooting $modemIp"
+  RebootModem
+  exit 0
 else
   LogMessage "dbg" "Internet connection is either up, or partially up - will not reboot $modemIp"
   exit 0
 fi
 
 
-# ------------------------------------------------------------------------------
-# Login
-# ------------------------------------------------------------------------------
-
-# If we have reached this point in the code, the network has been continuously
-# down for a little while, and it's now time to reboot the cable modem.
-
-# First, perform the login to the cable modem. Use curl's -L (location)
-# parameter to allow it to redirect to a new page when the login occurs. This
-# allows the second, redirected page, to return the csrfp_token cookie, which
-# is not returned on the first page of the request, only the second. I've
-# noticed that the second redirected page doesn't come through fully unless
-# I'm using a cookie file for Curl, but, that doesn't seem to be necessary.
-# The user cookie and the CSRFP token still work even if I don't have an
-# explicit cookie file and even if the full second page doesn't come through.
-# Still, the -L parameter seems to be needed in order for the cookie and the
-# CSRFP token to be retrieved and to work.
-
-# Set the parameters for the Curl call that will log into the modem. This
-# technique works as long as none of the parameters contain spaces.
-# https://stackoverflow.com/a/27928302
-curlParameters=(
-                 -s -i -L
-                 -d "username=$username"
-                 -d "password=$password"
-                 --referer "$loginRefererString"
-                 http://$modemIp/check.php
-                )
-
-# Create a string for printing the parameters for debugging purposes.
-# https://superuser.com/a/462400
-curlParametersPrintable=$( IFS=$' '; echo "${curlParameters[*]}" )
-
-# Log into the modem.
-LogMessage "dbg" "Logging into cable modem"
-
-# Do not print the login string in normal circumstances, since the username
-# and password are part of the printout. Leave this commented out unless
-# debugging.
-# LogMessage "dbg" "curl $curlParametersPrintable"
-loginReturnData=$( curl ${curlParameters[@]} )
-
-# Get the cookie "PHPSESSID" number (essentially the user login cookie) that
-# is returned from the login, as well as the all-important crsfp token which
-# is used by the modem's CRSF prevention features. Do this by using grep and
-# cut to parse it out of the curl response string. Also use "tail -1" to get
-# only the last match of any given one of these. For instance if the curl "-L"
-# parameter allows it to return two pages (the second page occurring from a
-# redirect from the first page), then, only grep the result for the second of
-# the two pages.
-userIdCookie=$( echo "$loginReturnData" | grep 'PHPSESSID=' | tail -1 | cut -f2 -d=|cut -f1 -d';')
-csrfpToken=$( echo "$loginReturnData" | grep 'csrfp_token=' | tail -1 | cut -f2 -d=|cut -f1 -d';')
-
-# Abort the script if the userid cookie is invalid.
-if [ -z "$userIdCookie" ]
-then
-  LogMessage "err" "Failed to login to $modemIp - userIdCookie invalid"
-  LogMessage "dbg" "Login return data:"
-  LogMessage "dbg" "---------------------------------------------------"
-  LogMessage "dbg" "$loginReturnData"
-  LogMessage "dbg" "---------------------------------------------------"
-  exit 1
-fi
-
-# Abort the script if the csrfp token cookie is invalid.
-if [ -z "$csrfpToken" ]
-then
-  LogMessage "err" "Failed to login to $modemIp - csrfpToken invalid"
-  LogMessage "dbg" "Login return data:"
-  LogMessage "dbg" "---------------------------------------------------"
-  LogMessage "dbg" "$loginReturnData"
-  LogMessage "dbg" "---------------------------------------------------"
-  exit 1
-fi
-
-# Print login success to the console.
-LogMessage "dbg" "Logged into $modemIp. PHPSESSID: $userIdCookie csrfp_token: $csrfpToken"
-
-
-# ------------------------------------------------------------------------------
-# Reboot modem
-# ------------------------------------------------------------------------------
-
-# Decide which part of the modem we are rebooting. When looking at the modem's
-# "Reset-Restore" page, the first two buttons (btn1 and btn2 in its code) will
-# reboot either the entire modem, or just its Wifi radio, respectively. This
-# is determined by two variables in the Javascript, which are passed on to a
-# PHP page via an AJAX/JSON data header, which then reboots the modem. I'm
-# taking advantage of this, and rebooting only the Wifi when in "test" mode.
-buttonName=""
-rebootDevice=""
-if [ "$testMode" = true ]
-then
-  LogMessage "dbg" "TEST MODE: Rebooting only the WiFi radio at this time"
-  buttonName="btn2"
-  rebootDevice="Wifi"
-else
-  LogMessage "dbg" "Full mode: Rebooting the entire cable modem device."
-  buttonName="btn1"
-  rebootDevice="Device"
-fi
-
-# Set the parameters for the Curl call that will reboot the modem. This
-# technique works as long as none of the parameters contain spaces.
-# https://stackoverflow.com/a/27928302
-curlParameters=(
-                -i -s
-
-                # In order to reboot the modem, you need both the user's
-                # session cookie, as well as the "csrfp_token" which is part
-                # of the cookie information retrieved at login time. See
-                # https://github.com/mebjas/CSRF-Protector-PHP and
-                # http://10.0.0.1/CSRF-Protector-PHP/js/csrfprotector.js for
-                # the details of how its CSRF protection feature works.
-                # Note: I am using an alternative way to send the two cookies
-                # directly in the curl call, without having to resort to a
-                # cookie file on the hard disk.
-                -b "PHPSESSID=$userIdCookie;csrfp_token=$csrfpToken"
-
-                # Note: "X-CSRF-Token" does not work. You must format the
-                # header "their way" which is "csrfp_token:$csrfpToken"
-                -H "csrfp_token:$csrfpToken"
-
-                # The modem's Javascript code uses the JQuery library to do
-                # its business. This is the default content-type sent by
-                # JQuery's "ajax()", command, according to my research.
-                -H "Content-Type:application/x-www-form-urlencoded;charset=UTF-8"
-
-                # Note: all variations of sending the AJAX/JSON information
-                # which uses curly brackets and colons were incorrect. Though
-                # there were many examples on the web which showed the AJAX as
-                # having curly brackets, this did not work. For instance it
-                # cannot be -d "{\"resetInfo\":[\"btn1\",\"Device\",\"admin\"]}"
-
-                # This is the actual AJAX data string that is sent by jquery
-                # 1.9.1, which I determined by duplicating the router's
-                # javascript in a localhost installation and then debugging
-                # it. This is how I found that the curly brackets were wrong.
-                # -d "resetInfo=%5B%22btn1%22%2C%22Device%22%2C%22admin%22%5D"
-
-                # Alternative, more-readable way of doing the above, which
-                # results in identical output to the above:
-                --data-urlencode "resetInfo=[\"$buttonName\",\"$rebootDevice\",\"admin\"]"
-
-                # URL of the PHP file on the modem which performs the actual
-                # reboot, based on the data in the JSON "resetInfo" array.
-                http://$modemIp/actionHandler/ajaxSet_Reset_Restore.php
-               )
-
-# Create a string for printing the parameters for debugging purposes.
-# https://superuser.com/a/462400
-curlParametersPrintable=$( IFS=$' '; echo "${curlParameters[*]}" )
-
-# Finally reboot the modem.
-LogMessage "dbg" "curl $curlParametersPrintable"
-rebootReturn=$( curl ${curlParameters[@]})
-
-# Check the return message from the modem web page from the reboot command,
-# which is the first line of the response headers, gotten with "head -1", and
-# the newlines and carriage returns removed with tr -d.
-checkReturnMessage=`echo "${rebootReturn}" | head -1 | tr -d '\r' | tr -d '\n'`
-
-if [ "$checkReturnMessage" == "HTTP/1.1 200 OK" ]
-then
-    LogMessage "info" "Reboot command successfully issued"
-
-    # Must sleep a long time after rebooting the modem, or else it would just
-    # try to reboot the thing again, since the network will still be down for
-    # a long time while the modem is rebooting.
-    sleep $SleepAfterReboot
-    exit 0
-else 
-    LogMessage "err" "Reboot command failed: $checkReturnMessage"
-    LogMessage "dbg" "Reboot return data:"
-    LogMessage "dbg" "---------------------------------------------------"
-    LogMessage "dbg" "$rebootReturn"
-    LogMessage "dbg" "---------------------------------------------------"
-    exit 1
-fi
 
 
 # ------------------------------------------------------------------------------
