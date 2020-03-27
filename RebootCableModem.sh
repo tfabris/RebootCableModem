@@ -41,12 +41,13 @@
 testMode=false
 
 # Set the modem address on your network.
-modemIp="10.0.0.1"
+modemIp="192.168.100.1"
 
 # Type of modem. Current available types are:
 #     DPC3941T
 #     SMCD3GNV
-modemType="DPC3941T"
+#     CM1150V
+modemType="CM1150V"
 
 # Set number of loops, and the number of seconds, of the network test loop. By
 # default, this program runs for about 4+ minutes total (there is no sleep
@@ -58,7 +59,7 @@ modemType="DPC3941T"
 NumberOfNetworkTests=4
 SleepBetweenTestsSec=60
 
-# This modem has a very long recovery time after a reboot. Make this script
+# Cable modems have a very long recovery time after a reboot. Make this script
 # sleep several minutes after rebooting, so that it blocks a subsequent re-run
 # of itself in the Synology Task Manager while it waits for the reboot to
 # complete. After this timer is done, the script will exit and the next timed
@@ -173,6 +174,12 @@ RebootModem()
   if [ "$modemType" = "SMCD3GNV" ]
   then
     RebootSMCD3GNV
+    return 0
+  fi
+
+  if [ "$modemType" = "CM1150V" ]
+  then
+    RebootCM1150V
     return 0
   fi
 
@@ -589,6 +596,130 @@ RebootDPC3941T()
     # password: xxxxxxxx
 }
 
+
+#------------------------------------------------------------------------------
+# Function: Reboot a Netgear CM1150V cable modem.
+#------------------------------------------------------------------------------
+RebootCM1150V()
+{
+  # ------------------------------------------------------------------------------
+  # Login
+  # ------------------------------------------------------------------------------
+
+  # Log into the modem.
+  LogMessage "dbg" "Logging into cable modem"
+
+  # Perform a first attempt at login, just to get an XSRF token. This login
+  # attempt will fail, but will return a valid XSRF token that I can parse
+  # out. Normally the token is written as a cookie, but I wanted to avoid
+  # using a cookie file on the hard disk if I didn't have to use one. I tried
+  # to get Curl to handle the cookie in memory without needing the file, but
+  # none of the techniques I found on the internet worked for that purpose.
+  loginReturnData=$( curl -s -i -L http://$modemIp )
+  xsrfToken=$( echo "$loginReturnData" | grep 'XSRF_TOKEN=' | tail -1 | cut -f2 -d=|cut -f1 -d';')
+
+  # Abort the script if the cookie is invalid.
+  if [ -z "$xsrfToken" ]
+  then
+    LogMessage "err" "Failed to login to $modemIp - xsrfToken invalid"
+    LogMessage "dbg" "Login return data:"
+    LogMessage "dbg" "---------------------------------------------------"
+    LogMessage "dbg" "$loginReturnData"
+    LogMessage "dbg" "---------------------------------------------------"
+    exit 1
+  fi
+
+  # Now that we have the token, we can log in, as long as we supply the token
+  # in the cookie data that we send.
+  curlParameters=(
+                  -s -i -L
+                  -b "XSRF_TOKEN=$xsrfToken"
+                  -u $username:$password
+                  http://$modemIp/RouterStatus.htm
+                 )
+  routerStatusReturnData=$( curl ${curlParameters[@]} )
+
+  # Check the return message from the modem web page, which is the first line
+  # of the response headers, gotten with "head -1", and the newlines and
+  # carriage returns removed with tr -d.
+  checkReturnMessage=`echo "${routerStatusReturnData}" | head -1 | tr -d '\r' | tr -d '\n'`
+  if [ "$checkReturnMessage" == "HTTP/1.1 200 OK" ]
+  then
+    LogMessage "dbg" "Logged into $modemIp. xsrfToken: $xsrfToken"
+  else 
+    LogMessage "err" "Failed to login to $modemIp - did not return 200 OK"
+    LogMessage "dbg" "Login return data:"
+    LogMessage "dbg" "---------------------------------------------------"
+    LogMessage "dbg" "$loginReturnData"
+    LogMessage "dbg" "---------------------------------------------------"
+    exit 1
+  fi
+
+  # ------------------------------------------------------------------------------
+  # Retrieve reboot ID number
+  # ------------------------------------------------------------------------------
+
+  # Parse out the id number from a line that looks like the following:
+  #      <form action='/goform/RouterStatus?id=1748112' method="post">
+  rebootIdNumber=$( echo "$routerStatusReturnData" | grep 'RouterStatus?id=' | cut -f3 -d=| cut -f1 -d\')
+
+  # Abort the script if the ID number is invalid.
+  if [ -z "$rebootIdNumber" ]
+  then
+    LogMessage "err" "Failed to retrieve rebootIdNumber"
+    exit 1
+  fi
+
+  # Print rebootIdNumber success to the console.
+  LogMessage "dbg" "Reboot ID retrieved: $rebootIdNumber"
+
+  # ------------------------------------------------------------------------------
+  # Reboot modem
+  # ------------------------------------------------------------------------------
+  curlParameters=(
+                  -s -i -L
+                  # Add a timeout so curl doesn't hang on the reboot
+                  --max-time 5
+                  -b "XSRF_TOKEN=$xsrfToken"
+                  -u $username:$password
+                  -X POST --data "buttonSelect=2"
+                  "http://$modemIp/goform/RouterStatus?id=$rebootIdNumber&buttonSelect=2"
+                 )
+  
+  # Only reboot the cable modem if this script is not running in test mode.
+  if [ "$testMode" = true ]
+  then
+    LogMessage "err" "TEST MODE: Not actually rebooting the modem at this time"
+
+    # Fake out the final check below, so it displays success when in test mode.
+    rebootReturn="HTTP/1.0 302 Redirect"
+  else
+    # Perform the actual reboot
+    rebootReturn=$( curl ${curlParameters[@]} )
+  fi
+
+  # Check the return message from the reboot web page, which is the first line
+  # of the response headers, gotten with "head -1", and the newlines and
+  # carriage returns removed with tr -d.
+  checkReturnMessage=`echo "${rebootReturn}" | head -1 | tr -d '\r' | tr -d '\n'`
+  if [ "$checkReturnMessage" == "HTTP/1.0 302 Redirect" ]
+  then
+    LogMessage "info" "Reboot command successfully issued"
+
+    # Must sleep a long time after rebooting the modem, or else it would just
+    # try to reboot the thing again, since the network will still be down for
+    # a long time while the modem is rebooting.
+    sleep $SleepAfterReboot
+    exit 0
+  else 
+    LogMessage "err" "Reboot command failed: $checkReturnMessage"
+    LogMessage "dbg" "Reboot return data:"
+    LogMessage "dbg" "---------------------------------------------------"
+    LogMessage "dbg" "$rebootReturn"
+    LogMessage "dbg" "---------------------------------------------------"
+    exit 1
+  fi
+}
 
 #------------------------------------------------------------------------------
 # Main Program Code
