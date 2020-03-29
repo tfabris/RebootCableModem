@@ -26,6 +26,8 @@
 # 
 # Edit the modemIp variable, below, to your modem address on your LAN.
 #
+# Edit the modemType variable, below (only a few models are available).
+#
 # Set up your Cron job or Synology Task Scheduler job to run this file every
 # five minutes.
 # ------------------------------------------------------------------------------
@@ -50,13 +52,18 @@ modemIp="192.168.100.1"
 modemType="CM1150V"
 
 # Set number of loops, and the number of seconds, of the network test loop. By
-# default, this program runs for about 4+ minutes total (there is no sleep
-# after the last test). Configure this program so that it is launched on a
-# scheduled timer which runs every x minutes where x is the proper multiple
-# of number of loops x time between loops, with gap at the end. For example,
-# 4 test loops at 60 seconds means you get a test at minutes 0-4 and then
-# the loop starts over again at the 5th minute at the 0 of the next run.
-NumberOfNetworkTests=4
+# default, this program runs for about 4 minutes total and then exists. It
+# performs 5 tests with a 60-second pause between each test. There is no pause
+# after the last test, the program just exits after the last test, so the
+# total runtime is about 4 minutes by default. Configure this program so that
+# it is launched on a scheduled timer which runs every x minutes, where x is
+# the proper multiple of number of loops times the time between each loop. For
+# example, if you leave this at its default setting of 5 test loops at 60
+# seconds each, it means you get a test at minutes 0, 1, 2, 3, and 4 on the
+# clock, and then the script ends. In that case, configure the scheduled job
+# to launch this script every 5 minutes, so that the loop starts over again at
+# the 5th minute, AKA the 0 minute of the next run of the script.
+NumberOfNetworkTests=5
 SleepBetweenTestsSec=60
 
 # Cable modems have a very long recovery time after a reboot. Make this script

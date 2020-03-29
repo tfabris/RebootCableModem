@@ -10,7 +10,8 @@ the cable modem daily at a specific time on the clock.
 
 I have owned a few cable modems recently: an Xfinity SMC SMCD3GNV, an Xfinity
 Cisco DPC3941T, and a Netgear CM1150V. There is a separate configuration for
-each one of those modems in this repository.
+each one of those modems in this repository, each one requires a different set
+of script code to perform the reboot.
 
 This can be run as a Cron job on any Linux or Mac system. I'm running it under
 the Task Scheduler on the Synology NAS on my LAN.
@@ -84,23 +85,15 @@ Using this pattern, the script will therefore only restart the cable modem if
 the Internet has been down continuously for several minutes.
 
 You can alter the number of checks, and the number of seconds between each
-check, by editing variables in the script. You could, for example, configure
-it to run 14 checks at intervals of 60 seconds. If you modify those values,
-then configure the scheduled task to run at the appropriate interval to match
-the changes you made. For instance, if you program it to make 14 checks at one
-check per minute, then run the scheduled task every 15 minutes.
+check, by editing variables in the script.
 
 If you set the variable "dailyReboot" to "true", it will also perform a
 "self-healing" reboot of the modem daily, at the time specified in the script.
 See the code comments in the script for details.
 
 
-Caution
+Note
 ------------------------------------------------------------------------------
-Make sure not to set the intervals to be so short that the modem doesn't have
-a chance to finish rebooting before the next run of the script. Otherwise it
-will reboot the modem in an infinite loop every few minutes.
-
 If the Internet connection is so poor that even rebooting the modem doesn't
 fix the problem, then this script will continue to reboot the modem in an
 infinite loop every few minutes until the connection is stable again.
