@@ -8,10 +8,11 @@ RebootCableModem is a set of Bash scripts which reboots my cable modem if the
 Internet is down for more than a few minutes. It will also, optionally, reboot
 the cable modem daily at a specific time on the clock.
 
-I have owned a few cable modems recently: an Xfinity SMC SMCD3GNV, an Xfinity
-Cisco DPC3941T, and a Netgear CM1150V. There is a separate configuration for
-each one of those modems in this repository, each one requires a different set
-of script code to perform the reboot.
+I have owned a few cable modems and a fiber modem recently: an Xfinity SMC
+SMCD3GNV, an Xfinity Cisco DPC3941T, a Netgear CM1150V, and a Quantum Fiber
+C5500XK. There is a separate configuration for each one of those modems in this
+repository, each one requires a different set of script code to perform the
+reboot.
 
 This can be run as a Cron job on any Linux or Mac system. I'm running it under
 the Task Scheduler on the Synology NAS on my LAN.

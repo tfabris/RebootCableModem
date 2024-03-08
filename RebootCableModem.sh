@@ -39,7 +39,10 @@
 
 # Test mode. Set to true to run this program in test mode. Set to false or any
 # other value to run this program normally. This should be always set to
-# "false" unless you are debugging this program.
+# "false" unless you are debugging this program. Test mode will fake a network
+# failure, and speed up the loops for checking the network failures, so that
+# you get a faster result. It will also not actually reboot the cable modem,
+# it will just print out what command it would have issued.
 testMode=false
 
 # Set the modem address on your network.
@@ -49,7 +52,8 @@ modemIp="192.168.100.1"
 #     DPC3941T
 #     SMCD3GNV
 #     CM1150V
-modemType="CM1150V"
+#     C5500XK
+modemType="C5500XK"
 
 # Set number of loops, and the number of seconds, of the network test loop. By
 # default, this program runs for about 4 minutes total and then exists. It
@@ -190,12 +194,88 @@ RebootModem()
     return 0
   fi
 
+  if [ "$modemType" = "C5500XK" ]
+  then
+    RebootC5500XK
+    return 0
+  fi
+
+
   # At this point, one of the modem reboots above should have exited and this
   # function should no longer be running. The code below is never expected to
   # be hit unless there is a problem with the $modemType variable.
   LogMessage "err" "Error in script - modem type $modemType is not found"
   exit 1
 }
+
+
+#------------------------------------------------------------------------------
+# Function: Reboot a Quantum Fiber C5500XK fiber router.
+#------------------------------------------------------------------------------
+RebootC5500XK()
+{
+  # Referer strings - not sure if these are needed. Other modems need them, I'm
+  # just doing them here and didn't even bother to check if this modem needs
+  # them too.
+  loginRefererString="https://$modemIp/login.html"
+  rebootRefererString="https://$modemIp/utilities_reboot.html"
+
+  # Use curl to login and retrieve the session ID cookie.
+  # NOTE: This modem requires HTTPS in its URL (it will 301-redirect you to
+  # HTTPS if you happen to try HTTP). But if you add "--insecure" to the curl
+  # command when using HTTPS then it will work and it won't redirect you.
+  loginReturnData=$( curl -s -i -d "username=$username" -d "password=$password" --referer "$loginRefererString" https://$modemIp/cgi/cgi_action --insecure )
+
+  # Parse the session ID cookie out of the returned output, and abort the script
+  # if the cookie is invalid.
+  sessionIdCookie=$( echo "$loginReturnData" | grep 'Session-Id=' | cut -f2 -d=|cut -f1 -d';' )
+  if [ -z "$sessionIdCookie" ]
+  then
+    LogMessage "err" "Failed to login to $modemIp"
+    exit 1
+  fi
+  LogMessage "dbg" "Logged in to $modemIp. Session ID Cookie: $sessionIdCookie"
+
+  # ------------------------------------------------------------------------------
+  # Reboot modem
+  # ------------------------------------------------------------------------------
+  # First, echo to the console the command we're going to use.
+  LogMessage "dbg" "curl -s -i -b \"Session-Id=$sessionIdCookie;\" -d \"Action=Reboot\" --referer \"$rebootRefererString\" https://$modemIp/cgi/cgi_action --insecure"
+
+  # Only reboot if this script is not running in test mode.
+  if [ "$testMode" = true ]
+  then
+      LogMessage "err" "TEST MODE: Not actually rebooting at this time"
+  else
+      # Actually perform the reboot. NOTE: Use "head -1" so that only the first
+      # line of the data is returned so that we can check if it simply returns
+      # an OK result, that's all we care about.
+      rebootReturn=$( curl -s -i -b "Session-Id=$sessionIdCookie;" -d "Action=Reboot" --referer "$rebootRefererString" https://$modemIp/cgi/cgi_action --insecure | head -1)
+  fi
+
+  # Strip out an extra carriage return that happens to exist in the return
+  # value. The other modems just have linefeeds in their outputs, this one has
+  # CRLFs in the output and the "head -1" above returns something with a CR at
+  # the end because "head" splits on just linefeeds.
+  rebootReturn=$(echo $rebootReturn | tr -d '\r')
+
+  # Check the return message from the modem web page from the reboot command
+  # (which is the first line of the response headers we got with "head -1").
+  if [ "$rebootReturn" == "HTTP/1.1 200 OK" ]
+  then
+      LogMessage "info" "Reboot command successfully issued: $rebootReturn"
+
+      # Must sleep a long time after rebooting the modem, or else it would just
+      # try to reboot the thing again, since the network will still be down for
+      # a long time while the modem is rebooting.
+      sleep $SleepAfterReboot
+      exit 0
+  else 
+      LogMessage "err" "Reboot command failed: $rebootReturn"
+      exit 1
+  fi
+}
+
 
 #------------------------------------------------------------------------------
 # Function: Reboot an Xfinity SMC SMCD3GNV cable modem.
