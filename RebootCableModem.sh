@@ -95,8 +95,8 @@ dailyReboot=true
 # window twice, this script also has a "pause" after executing the reboot
 # itself, so the script will still be running (pausing) for longer than those
 # five minutes, so there won't be a second retrigger of this window.
-dailyRebootTimeStart=04:30
-dailyRebootTimeEnd=04:37
+dailyRebootTimeStart=03:20
+dailyRebootTimeEnd=03:27
 
 # Alternate speed for running this program in test mode.
 if [ "$testMode" = true ]
