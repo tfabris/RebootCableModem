@@ -95,6 +95,13 @@ dailyReboot=true
 # window twice, this script also has a "pause" after executing the reboot
 # itself, so the script will still be running (pausing) for longer than those
 # five minutes, so there won't be a second retrigger of this window.
+#
+# Note: Make sure that other timed tasks on your network will synergize with the
+# modem reboot time. For example, I have a timed reboot of my Synology NAS at
+# 3:30 AM so that it will happen shortly after the modem reboot is complete,
+# and it will run a DDNS update at that time. Since the reboot of the modem
+# might change its external IP address, then the DDNS update will occur shortly
+# after the modem has finished rebooting.
 dailyRebootTimeStart=03:20
 dailyRebootTimeEnd=03:27
 

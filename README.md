@@ -52,8 +52,9 @@ Edit the "modemIp" variable inside the script, and set it to the address of
 the cable modem on your LAN.
 
 ####  Edit the dailyReboot variables:
-Edit the "dailyReboot" variables inside the script. Enable or disable the
-feature, and set the time of day, by following the instructions in the code
+Edit the "dailyReboot" variables inside the script. These variables control
+the "self-healing" nightly reboot of the modem, if desired. Enable or disable
+the feature, and set the time of day, by following the instructions in the code
 comments in the script.
 
 ####  Set file permissions:
@@ -71,6 +72,19 @@ you are running it on a Synology NAS via the Synology Task Scheduler, create a
 task for it there. Create the job so that it runs the script once every five
 minutes continuously. If you have edited the script to alter its timing
 intervals, then configure the job accordingly.
+
+####  Consider other related tasks:
+You might choose to run other tasks in a time window which falls either before
+or after the modem performs its nightly self-healing reboot. For example, if
+this script is configured to reboot the modem at 3:20 AM, then you might want
+to configure some other things on your network to perform other nightly tasks
+shortly before or after that time, to ensure they are not interrupted by the
+modem's nightly reboot, or so that they synergize with the modem reboot. Make
+sure that whatever tasks you're performing have a buffer of about 5-10 minutes
+before or after, since this script only has an accuracy window of about 5
+minutes. In my case, my Synology NAS has its own nightly reboot, which I
+schedule to occur at 3:30 AM, so that it can run its DDNS (dynamic domain name
+service) update after the router has rebooted at approximately 3:20-3:27 AM.
 
 
 Behavior
