@@ -56,7 +56,7 @@ modemIp="192.168.100.1"
 modemType="C5500XK"
 
 # Set number of loops, and the number of seconds, of the network test loop. By
-# default, this program runs for about 4 minutes total and then exists. It
+# default, this program runs for about 4 minutes total and then exits. It
 # performs 5 tests with a 60-second pause between each test. There is no pause
 # after the last test, the program just exits after the last test, so the
 # total runtime is about 4 minutes by default. Configure this program so that
@@ -896,7 +896,17 @@ do
     LogMessage "dbg" "Network is up on test loop $networkTestLoop of $NumberOfNetworkTests. Number of failures so far: $numberOfNetworkFailures"
   else
     ((numberOfNetworkFailures++))
-    LogMessage "err" "Network is down on test loop $networkTestLoop of $NumberOfNetworkTests. Number of failures so far: $numberOfNetworkFailures"
+
+    # Change the Synology NAS logging level, depending on how many failures we
+    # have had so far. Only log to the level of "error" if there have been more
+    # than two failures in a row. For those who aren't running this on a
+    # Synology NAS, the messages will not change.
+    if [ "$numberOfNetworkFailures" -gt "2" ]
+    then
+      LogMessage "err" "Network is down on test loop $networkTestLoop of $NumberOfNetworkTests. Number of failures so far: $numberOfNetworkFailures"
+    else
+      LogMessage "info" "Network is down on test loop $networkTestLoop of $NumberOfNetworkTests. Number of failures so far: $numberOfNetworkFailures"
+    fi
   fi
 
   # Issue - on 2020-01-19 I encountered a situation where DNS was down and
