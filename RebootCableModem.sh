@@ -72,10 +72,20 @@ SleepBetweenTestsSec=60
 
 # Cable modems have a very long recovery time after a reboot. Make this script
 # sleep several minutes after rebooting, so that it blocks a subsequent re-run
-# of itself in the Synology Task Manager while it waits for the reboot to
-# complete. After this timer is done, the script will exit and the next timed
-# run of the script will go back to rechecking if the Internet came back up.
-SleepAfterReboot=420
+# of itself in the Task Manager while it waits for the reboot to complete.
+# After this timer is done, the script will exit and the next timed run of the
+# script will go back to rechecking if the Internet came back up. Another thing
+# to consider, is if there's a genuine outage that isn't fixed by the reboot,
+# then repeated reboots might confuse anyone who's trying to diagnose the
+# outage, so consider maybe setting a very long pause after the reboot. On the
+# other hand, a long pause after the reboot means that this script keeps
+# running if not terminated. In my case, I'm running this script on a Synology
+# NAS system which doesn't have an easy way to find the PID of a running
+# scheduled task to terminate it, and I don't necessarily want to have the task
+# stuck in the running state for a long time after a reboot.
+#
+# This number is in seconds, e.g. 420secs = 7minutes, 1800secs = 30minutes.
+SleepAfterRebootSecs=900
 
 # Daily reboot. Set to true in order to perform a "self-healing" reboot of the
 # modem once per day. Normally, this script will reboot the modem if the
@@ -109,7 +119,7 @@ dailyRebootTimeEnd=03:27
 if [ "$testMode" = true ]
 then
     SleepBetweenTestsSec=1
-    SleepAfterReboot=1
+    SleepAfterRebootSecs=1
 fi
 
 # The Internet site we will be pinging to determine if the network is up.
@@ -275,7 +285,7 @@ RebootC5500XK()
       # Must sleep a long time after rebooting the modem, or else it would just
       # try to reboot the thing again, since the network will still be down for
       # a long time while the modem is rebooting.
-      sleep $SleepAfterReboot
+      sleep $SleepAfterRebootSecs
       exit 0
   else 
       LogMessage "err" "Reboot command failed: $rebootReturn"
@@ -381,7 +391,7 @@ RebootSMCD3GNV()
       # Must sleep a long time after rebooting the modem, or else it would just
       # try to reboot the thing again, since the network will still be down for
       # a long time while the modem is rebooting.
-      sleep $SleepAfterReboot
+      sleep $SleepAfterRebootSecs
       exit 0
   else 
       LogMessage "err" "Reboot command failed: $rebootReturn"
@@ -610,7 +620,7 @@ RebootDPC3941T()
       # Must sleep a long time after rebooting the modem, or else it would just
       # try to reboot the thing again, since the network will still be down for
       # a long time while the modem is rebooting.
-      sleep $SleepAfterReboot
+      sleep $SleepAfterRebootSecs
       exit 0
   else 
       LogMessage "err" "Reboot command failed: $checkReturnMessage"
@@ -803,7 +813,7 @@ RebootCM1150V()
     # Must sleep a long time after rebooting the modem, or else it would just
     # try to reboot the thing again, since the network will still be down for
     # a long time while the modem is rebooting.
-    sleep $SleepAfterReboot
+    sleep $SleepAfterRebootSecs
     exit 0
   else 
     LogMessage "err" "Reboot command failed: $checkReturnMessage"
