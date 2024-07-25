@@ -53,7 +53,7 @@ modemIp="192.168.100.1"
 #     SMCD3GNV
 #     CM1150V
 #     C5500XK
-modemType="C5500XK"
+modemType="CM1150V"
 
 # Set number of loops, and the number of seconds, of the network test loop. By
 # default, this program runs for about 4 minutes total and then exits. It
