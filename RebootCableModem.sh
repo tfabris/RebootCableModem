@@ -719,6 +719,16 @@ RebootCM1150V()
   # using a cookie file on the hard disk if I didn't have to use one. I tried
   # to get Curl to handle the cookie in memory without needing the file, but
   # none of the techniques I found on the internet worked for that purpose.
+
+  # NOTE TO SELF: If you are trying the command below at the shell prompt in an
+  # attempt to debug it, remember that "echo $loginReturnData" will have the
+  # CR's from the original output embedded in it, making every line of the the
+  # console output overwrite the prior line, making it look like it contains
+  # only the last line, when in fact it has all lines in the string. This has
+  # the effect of making it seem like the headers and the XSRF token aren't
+  # getting captured in the variable, when really they were in there all along.
+  # To see all of the output from $loginReturnData you must strip CR's from it
+  # like this:        echo $loginReturnData | tr -d '\r'
   loginReturnData=$( curl -s -i -L http://$modemIp )
   xsrfToken=$( echo "$loginReturnData" | grep 'XSRF_TOKEN=' | tail -1 | cut -f2 -d=|cut -f1 -d';')
 
@@ -726,10 +736,20 @@ RebootCM1150V()
   if [ -z "$xsrfToken" ]
   then
     LogMessage "err" "Failed to login to $modemIp - xsrfToken invalid"
-    LogMessage "dbg" "Login return data:"
-    LogMessage "dbg" "---------------------------------------------------"
-    LogMessage "dbg" "$loginReturnData"
-    LogMessage "dbg" "---------------------------------------------------"
+
+    # 2025-09-18 - Trying to debug why the XRSF token return isn't always
+    # working when running in the middle of the night. It works when I try it
+    # at the command line in a hand-debugging session (as long as I remember my
+    # note to self above), so I don't know what's going wrong when it's running
+    # in production. I need more data when running it live in production, so
+    # I'm echoing the extra data to my Synology log now, if this fails.
+    # Originally I was only printing it to the console with "dbg" commands:
+    # LogMessage "dbg" "Login return data:"
+    # LogMessage "dbg" "---------------------------------------------------"
+    # LogMessage "dbg" "$loginReturnData"
+    # LogMessage "dbg" "---------------------------------------------------"
+    LogMessage "err" "Login return data was: $loginReturnData"
+
     exit 1
   fi
 
